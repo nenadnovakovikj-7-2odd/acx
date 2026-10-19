@@ -1,0 +1,31 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dylib
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          xcrun -sdk iphoneos clang++ -arch arm64 -dynamiclib -fobjc-arc -O2 \
+            -isysroot "$SDK" -framework Foundation \
+            -Wl,-undefined,dynamic_lookup \
+            -Wl,-install_name,@rpath/ACX.dylib \
+            ACX.mm -o ACX.dylib
+          codesign -f -s - ACX.dylib
+          shasum -a 256 ACX.dylib > ACX.dylib.sha256
+          cat ACX.dylib.sha256
+
+      - name: Publish asset
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" ACX.dylib ACX.dylib.sha256 --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
